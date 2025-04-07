@@ -179,8 +179,37 @@ dbschematest=>
 
 # DynamoDB
 
+This demo will deploy an application which receives post request to  `/item`endpoint and a JSON document with the following payload
+
+```json
+{
+    "id": "1", 
+    "data": "my data"
+}
+```
+
+The application is deployed in the same namespace as the rest of the demo, and to trigger its deployment, please go to the `node-dynamodbp` foder located at the repository root level and execute the `deploy.sh` script. It may require to grant execution permissions to the script with `chmod +x deploy.sh`. 
+
+At the first attempt, the application won't work as the service account `default` is not able to assume the IAM role to perform a put operation in the Items DynamoDB table. 
+
 ```bash
-curl -X POST https://$(oc get route -n openshift-console console -ojsonpath='{.spec.host}')/item \
+curl -X POST https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item \
      -H "Content-Type: application/json" \
-     -d    '{"id": "23", "data": "This is another test item"}'
+     -d    '{"id": "1", "data": "Wrong Service Account"}'
+```
+
+To fix it, simply, navigate to the `infra` directory and execute the following patch instruction to have a new workload with the correct service account: 
+
+```bash
+SERVICE_ACCOUNT_NAME=$(terraform -chdir=../infra output -raw demo_service_account)
+oc patch deployment rosa-dynamodb-demo \
+  -p "{\"spec\": {\"template\": {\"spec\": {\"serviceAccountName\": \"${SERVICE_ACCOUNT_NAME}\"}}}}"
+```
+
+Now, it will create a item in the table. 
+
+```bash
+curl -X POST https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item \
+     -H "Content-Type: application/json" \
+     -d    '{"id": "1", "data": "Works!"}'
 ```
