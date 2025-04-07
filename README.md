@@ -214,7 +214,7 @@ By default, the deployment uses the `default` service account, which lacks permi
 Try sending a sample request:
 
 ```bash
-curl -X POST "https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item" \
+curl -i -X POST "https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item" \
      -H "Content-Type: application/json" \
      -d '{"id": "1", "data": "Wrong Service Account"}'
 ```
@@ -244,7 +244,7 @@ This service account has IRSA annotations and the correct IAM role to perform `P
 Now, the same request will successfully write to DynamoDB:
 
 ```bash
-curl -X POST "https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item" \
+curl -i -X POST "https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item" \
      -H "Content-Type: application/json" \
      -d '{"id": "1", "data": "Works!"}'
 ```
