@@ -3,6 +3,8 @@ locals {
   operator_role_prefix = "${var.cluster_name}-operator"
 
   demo_service_account = "${var.cluster_name}-demo-app-sa"
+
+  rds_iam_user         = "rds_iam_user"
 }
 
 ############################
@@ -244,24 +246,21 @@ data "aws_iam_policy" "s3_full_access" {
 }
 
 # Policy for RDS
-data "aws_iam_policy_document" "rds_connect" {
-  statement {
-    effect = "Allow"
-
-    actions = [
-      "rds-db:connect"
-    ]
-
-    resources = [ 
-      aws_db_instance.rds_postgres.arn
-     ]
-  }
-}
+data "aws_region" "current" {}
 
 resource "aws_iam_policy" "rds_connect_policy" {
   name        = "${var.cluster_name}-rds-demo-policy"
   description = "Allows connection to RDS"
-  policy      = data.aws_iam_policy_document.rds_connect.json
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "rds-db:connect"
+        Resource = "arn:aws:rds-db:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:dbuser:${aws_db_instance.rds_postgres.resource_id}/${local.rds_iam_user}"
+      }
+    ]
+  })
 }
 
 
