@@ -333,7 +333,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: gp3
+  storageClassName: gp3-csi
 EOF
 ```
 
@@ -404,6 +404,8 @@ In this demo, we'll show how to **dynamically provision storage** using an exist
 > - An **EFS file system** exists in the **same VPC** as your ROSA cluster.
 > - The **Security Group** attached to the EFS mount targets allows inbound traffic on **TCP port 2049** (NFS).
 > - IAM permissions for dynamic provisioning are in place.
+
+More information about this topic [here](https://cloud.redhat.com/experts/rosa/aws-efs/)
 
 ---
 
@@ -540,6 +542,6 @@ oc rsh \
 ## 🧹 Clean Up Resources
 
 ```bash
-oc delete pod efs-demo-writer efs-demo-reader -n $(terraform output -raw demo_namespace)
+oc delete deploy efs-app -n $(terraform output -raw demo_namespace)
 oc delete pvc efs-demo-pvc -n $(terraform output -raw demo_namespace)
 ```
