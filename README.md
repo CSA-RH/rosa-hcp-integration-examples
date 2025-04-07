@@ -1,7 +1,12 @@
-Make sure you are located in the terraform `infra` directory and you have applied successfully applied the manifest to your infra. 
+# 🔧 IRSA + ROSA Demo: Preparation Steps
 
-# Preparation
-After the Terraform execution,you can log in to the created cluster with the following code snippet: 
+Ensure you are inside the `infra` directory where the Terraform configuration is located, and that the infrastructure has been successfully applied.
+
+---
+
+## 1. Log in to the ROSA Cluster
+
+Use the credentials and API URL output by Terraform to log in as `cluster-admin`:
 
 ```bash
 oc login -u cluster-admin \
@@ -9,19 +14,31 @@ oc login -u cluster-admin \
          $(terraform output -raw cluster_api_url)
 ```
 
-If not created, make sure that the project for the demo is available. The value could be fetched from the `demo_namespace` output variable in terraform.
+---
+
+## 2. Create or Use the Demo Namespace
+
+If it hasn’t been created yet, create the namespace that will host the demo workloads. You can retrieve the namespace name from the `demo_namespace` Terraform output:
 
 ```bash
 oc new-project $(terraform output -raw demo_namespace)
 ```
 
-Make sure that the Demo service account is created in the demo namespace. This service account will be used by the workloads in those examples to assume the rol which hosts all the needed permissions:
+---
+
+## 3. Create the Service Account
+
+This service account will be used by the workloads to assume the IAM role configured with the required AWS permissions:
 
 ```bash
 oc create sa $(terraform output -raw demo_service_account)
 ```
 
-Annotate the service account with the IAM role for the demo. 
+---
+
+## 4. Annotate the Service Account with the IAM Role
+
+Link the service account to the correct IAM role using an annotation. This enables IAM Roles for Service Accounts (IRSA):
 
 ```bash
 oc annotate serviceaccount \
@@ -30,9 +47,17 @@ oc annotate serviceaccount \
    eks.amazonaws.com/role-arn=$(terraform output -raw demo_role_arn)
 ```
 
-# S3
+# 🪣 S3 Access from a Pod using IRSA
 
-In this example, we will show how to retrieve and interact with S3 with the CLI inside a Pod by using IRSA. We create the pod with SDK to access S3. The example must be executed in the terraform script directory to retrieve state variables. 
+This example demonstrates how to access **Amazon S3** from within a Pod using **AWS IAM Roles for Service Accounts (IRSA)** on **OpenShift ROSA**.
+
+You'll deploy a simple `aws-cli` Pod and use the AWS SDK via CLI to list S3 buckets. Ensure you're running these commands from the Terraform `infra` directory to access the required output variables.
+
+---
+
+## 🚀 Deploy a Pod with AWS CLI
+
+The following command deploys a Pod running the official AWS CLI container image. It uses the service account configured with IRSA to assume the IAM role with S3 access:
 
 ```bash
 cat <<EOF | oc create -f -
@@ -53,94 +78,121 @@ spec:
       labels:
         app: awscli-s3
     spec:
+      serviceAccountName: $(terraform output -raw demo_service_account)
       containers:
-        - image: amazon/aws-cli:latest
-          name: awscli-s3
-          command:
-            - /bin/sh
-            - "-c"
-            - while true; do sleep 10; done
+        - name: awscli-s3
+          image: amazon/aws-cli:latest
+          command: ["/bin/sh", "-c", "while true; do sleep 10; done"]
           env:
             - name: HOME
               value: /tmp
-      serviceAccount: $(terraform output -raw demo_service_account)
 EOF
 ```
 
-Get inside the pod 
+---
+
+## 🧑‍💻 Access the Pod Shell
+
+Once the Pod is running, open an interactive shell inside it:
 
 ```bash
-oc rsh $(oc get pod -oNAME --selector app=awscli-s3)
+oc rsh $(oc get pod -o name -l app=awscli-s3)
 ```
 
-Once logged in the pod, execute, for instance, the listing of all s3 buckets with the CLI
+---
+
+## 📂 Interact with S3
+
+From within the Pod, you can now use the AWS CLI authenticated via IRSA. For example, list your S3 buckets:
 
 ```bash
 aws s3 ls
 ```
 
-# RDS
+✅ If your IAM role is correctly configured, you should see the list of accessible S3 buckets.
 
-In this example, we will show how to connect to the RDS postgres database created by the Terraform manifests by means of a temporary token retrieved by the application. We make use of a pod with the `psql` tool and the AWS SDK installed. 
+# 🛢️ RDS (PostgreSQL) Access using IRSA
 
-```bash 
+In this demo, we’ll show how to **connect to an RDS PostgreSQL database** using a **temporary IAM authentication token** from within an OpenShift pod. This pod uses the AWS CLI and the PostgreSQL `psql` client.
+
+Make sure you're executing this from the Terraform `infra` directory, so that the output variables are correctly resolved.
+
+---
+
+## 🚀 Deploy a Pod with AWS CLI and PostgreSQL Client
+
+This pod will install the necessary tools and use the IAM role assigned via IRSA to authenticate securely.
+
+```bash
 cat <<EOF | oc apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: awscli-postgres   
+  name: awscli-postgres
 spec:
   serviceAccountName: $(terraform output -raw demo_service_account)
   containers:
-  - name: aws-cli
-    image: amazonlinux:latest
-    command: ["/bin/sh", "-c", "yum install -y postgresql17 aws-cli; while true; do sleep 30; done"]
-    env:
-      - name: AWS_REGION
-        value: $(aws configure get region)
-      - name: PGHOST
-        value: $(terraform output -raw rds_database_address)
-      - name: PGDATABASE
-        value: dbschematest
-      - name: PGUSER
-        value: rds_iam_user
-      - name: PGPORT
-        value: "5432"
-      - name: PGSSLMODE
-        value: require
-      - name: MASTER_PWD
-        value: $(terraform output -raw rds_database_password)
+    - name: aws-cli
+      image: amazonlinux:latest
+      command: ["/bin/sh", "-c", "yum install -y postgresql17 aws-cli; while true; do sleep 30; done"]
+      env:
+        - name: AWS_REGION
+          value: $(aws configure get region)
+        - name: PGHOST
+          value: $(terraform output -raw rds_database_address)
+        - name: PGDATABASE
+          value: dbschematest
+        - name: PGUSER
+          value: rds_iam_user
+        - name: PGPORT
+          value: "5432"
+        - name: PGSSLMODE
+          value: require
+        - name: MASTER_PWD
+          value: $(terraform output -raw rds_database_password)
   restartPolicy: Never
 EOF
 ```
 
-We must first create the database user that will connect the database through a temporary token generation. For this, we need to connect first as a master user, create the user, grant permission to the target database to connect and add the rds_iam role to the user. 
+---
 
-To cononect to the pod by master user (postgres) and password (retrieved from terraform manifests):
+## 👤 Create the IAM-Authenticated PostgreSQL User
+
+Before connecting with an IAM token, we need to create the database user and assign the necessary permissions. This is done using the master user (`postgres`) and password provisioned by Terraform.
+
+1. **Enter the pod:**
 
 ```bash
 oc rsh awscli-postgres
 ```
 
-Once inside the pod, we connect to the postgres instance by using the environment variables for simplicity: 
+2. **Connect to the database as the master user:**
 
 ```bash
 PGUSER=postgres PGPASSWORD=$MASTER_PWD psql
 ```
 
-Once logged in the database, we create the user and grant the proper permissions: 
+3. **Inside the `psql` session, create the IAM user and grant permissions:**
 
-```
+```sql
 CREATE USER rds_iam_user WITH LOGIN;
 GRANT CONNECT ON DATABASE dbschematest TO rds_iam_user;
 GRANT rds_iam TO rds_iam_user;
 ```
 
-For exiting from the database session, simply issue `\q` or `quit` or `exit`
+4. **Exit the session:**
 
-For accessing the database with the new user, we need first to generate a temporary token with the AWS CLI or AWS SDK. In our case, we can use the AWS CLI. This token is valid for 15 minutes, therefore, connect to the database right after getting it. In the pod session, simply issue the following command to fetch the token and store it in the environment variable TOKEN
+```sql
+\q
+```
 
-```bash 
+---
+
+## 🔐 Generate a Temporary IAM Authentication Token
+
+Now that the user is ready, use the AWS CLI to generate a **temporary authentication token** (valid for 15 minutes):
+
+```bash
 TOKEN=$(aws rds generate-db-auth-token \
   --hostname $PGHOST \
   --port 5432 \
@@ -148,16 +200,19 @@ TOKEN=$(aws rds generate-db-auth-token \
   --username rds_iam_user)
 ```
 
-For connecting to the database, as the environment variable PGUSER is set to `rds_iam_user` simply issue the following command: 
+---
+
+## 🧪 Connect Using the IAM Token
+
+With the `PGUSER` environment variable already set to `rds_iam_user`, you can now authenticate using the generated token:
 
 ```bash
 PGPASSWORD=$TOKEN psql
 ```
 
-If everything is setup correctly, a new database session with the user will start. Here an example of the output: 
+If successful, you should be able to get a session like the following:
 
 ```
-sh-5.2# PGPASSWORD=$TOKEN psql
 psql (17.4, server 17.2)
 SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
 Type "help" for help.
@@ -168,14 +223,14 @@ dbschematest=> SELECT CURRENT_USER;
  rds_iam_user
 (1 row)
 
-dbschematest=> SELECT VERSION();
+dbschematest=> SELECT version();
                                       version                                       
 ------------------------------------------------------------------------------------
  PostgreSQL 17.2 on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 12.4.0, 64-bit
 (1 row)
-
-dbschematest=> 
 ```
+
+✅ You're now securely connected to RDS via IAM authentication from within your OpenShift cluster.
 
 # DynamoDB
 This demo deploys a simple Node.js application that exposes a `POST` endpoint at `/item`. The endpoint accepts a JSON payload with the following structure:
