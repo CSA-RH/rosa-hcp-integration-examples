@@ -64,27 +64,8 @@ output "vpc_id" {
   value    = module.vpc.vpc_id
 }
 
-output "storage_class_efs" {
-  value =<<EOT
-cat <<EOF | oc create -f - 
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:    
-  name: efs-sc
-mountOptions:
-- tls
-parameters:
-  basePath: /dynamic_provisioning
-  directoryPerms: "700"
-  fileSystemId: ${module.efs.id}
-  gidRangeEnd: "2000"
-  gidRangeStart: "1000"
-  provisioningMode: efs-ap
-provisioner: efs.csi.aws.com
-reclaimPolicy: Retain
-volumeBindingMode: Immediate
-EOF
-EOT
+output "efs_resource_id" {
+  value  = module.efs.id
 }
 
 output rds_database_arn {

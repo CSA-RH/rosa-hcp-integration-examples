@@ -305,3 +305,241 @@ curl -i -X POST "https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.ho
 ```
 
 You should see a response confirming the item was added in the DynamoDB resource page at the menu *Explore Items*.
+
+# EBS: 💾 PVC Demo on ROSA with `gp3` Storage Class
+
+In this demo, we'll:
+
+- Create a `PersistentVolumeClaim` using AWS EBS `gp3`.
+- Deploy a simple Pod (based on busybox) that mounts the PVC and writes data.
+- Validate data persistence by reading from the volume.
+
+Make sure you're in the **Terraform infra directory** if you're using output variables, and your OpenShift cluster is set up.
+
+---
+
+## 1️⃣ Create the PVC
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: demo-pvc
+  namespace: $(terraform output -raw demo_namespace)
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: gp3
+EOF
+```
+
+📝 *This requests a 1Gi volume backed by AWS EBS using the `gp3` storage class.*
+
+---
+
+## 2️⃣ Deploy a Pod That Writes to the PVC
+
+We’ll use a simple `busybox` container that mounts the volume and writes a demo file.
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-demo-writer
+  namespace: $(terraform output -raw demo_namespace)
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command: ["/bin/sh", "-c", "echo 'Hello from ROSA PVC demo!' > /mnt/data/hello.txt; sleep 3600"]
+      volumeMounts:
+        - mountPath: /mnt/data
+          name: demo-volume
+  volumes:
+    - name: demo-volume
+      persistentVolumeClaim:
+        claimName: demo-pvc
+EOF
+```
+
+📝 *This pod writes a message to the mounted volume and sleeps for an hour.*
+
+---
+
+## 3️⃣ Verify That the File Was Written
+
+```bash
+oc rsh -n $(terraform output -raw demo_namespace) pvc-demo-writer cat /mnt/data/hello.txt
+```
+
+✅ You should see:
+
+```
+Hello from ROSA PVC demo!
+```
+
+---
+
+## 🧹 (Optional) Clean Up
+
+To remove the resources after testing:
+
+```bash
+oc delete pod pvc-demo-writer -n $(terraform output -raw demo_namespace)
+oc delete pvc demo-pvc -n $(terraform output -raw demo_namespace)
+```
+
+# 📂 EFS Demo on ROSA (OpenShift on AWS)
+
+In this demo, we'll show how to **dynamically provision storage** using an existing **Amazon EFS** file system from a ROSA cluster. This setup allows shared, persistent storage across pods—perfect for workloads that require shared access to data.
+
+> ✅ **Assumptions:**
+>
+> - The **EFS CSI driver/operator** is already installed.
+> - An **EFS file system** exists in the **same VPC** as your ROSA cluster.
+> - The **Security Group** attached to the EFS mount targets allows inbound traffic on **TCP port 2049** (NFS).
+> - IAM permissions for dynamic provisioning are in place.
+
+---
+
+## 1️⃣ Create a PVC Using the EFS StorageClass
+
+We will create an Storage Class for enabling the access to the EFS resource deployed with the infra: 
+
+```bash
+cat <<EOF | oc create -f - 
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:    
+  name: efs-sc
+mountOptions:
+- tls
+parameters:
+  basePath: /dynamic_provisioning
+  directoryPerms: "700"
+  fileSystemId: $(terraform output -raw efs_resource_id)
+  gidRangeEnd: "2000"
+  gidRangeStart: "1000"
+  provisioningMode: efs-ap
+provisioner: efs.csi.aws.com
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+EOF
+```
+
+We'll start by creating a `PersistentVolumeClaim` that uses the `efs-sc` storage class.
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: efs-demo-pvc
+  namespace: $(terraform output -raw demo_namespace)
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: efs-sc
+EOF
+```
+
+📝 *EFS supports `ReadWriteMany`, allowing the volume to be mounted by multiple pods simultaneously.*
+
+---
+
+## 2️⃣ Deploy a Pod That Writes to the EFS Volume
+
+We’ll create a Deployment which will deploy a replica in every Availability Zone that mounts the EFS-backed PVC and writes a message to a file with the current hostname.
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: efs-app
+  namespace: $(terraform output -raw demo_namespace)
+  labels:
+    app: efs-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: efs-app
+  template:
+    metadata:
+      labels:
+        app: efs-app
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: efs-app
+      containers:
+      - name: busybox
+        image: busybox        
+        command: ["/bin/sh", "-c", "echo 'Hello from EFS on ROSA!' > /mnt/efs/efs-demo.txt; sleep 3600"]
+        volumeMounts:
+        - name: efs-volume
+          mountPath: /mnt/efs
+      volumes:
+      - name: efs-volume
+        persistentVolumeClaim:
+          claimName: efs-demo-pvc
+EOF
+```
+
+---
+
+## 3️⃣ Validate the File Was Created
+
+Connect to the pod and list the content of the mounted directory:
+
+```bash
+oc rsh \
+  -n $(terraform output -raw demo_namespace) \
+  $(oc get pod --selector app=efs-app -ojsonpath='{.items[0].metadata.name}') \
+  cat /mnt/efs/efs-demo.txt
+```
+
+✅ Expected output:
+
+```
+Hello from EFS on ROSA!
+Hello from EFS on ROSA!
+Hello from EFS on ROSA!
+```
+
+---
+
+## 4️⃣ (Optional) Connect to a second pod to see the shared file
+
+You can validate that the EFS volume supports shared access by launching a second pod reading the same file:
+
+```bash
+oc rsh \
+  -n $(terraform output -raw demo_namespace) \
+  $(oc get pod --selector app=efs-app -ojsonpath='{.items[1].metadata.name}') \
+  cat /mnt/efs/efs-demo.txt
+```
+
+✅ Output should be the same as the previous test. 
+
+---
+
+## 🧹 Clean Up Resources
+
+```bash
+oc delete pod efs-demo-writer efs-demo-reader -n $(terraform output -raw demo_namespace)
+oc delete pvc efs-demo-pvc -n $(terraform output -raw demo_namespace)
+```
