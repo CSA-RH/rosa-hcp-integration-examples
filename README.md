@@ -457,7 +457,7 @@ EOF
 
 ---
 
-## 2️⃣ Deploy a Pod That Writes to the EFS Volume
+## 2️⃣ Create a Deployment That Writes to the EFS Volume
 
 We’ll create a Deployment which will deploy a replica in every Availability Zone that mounts the EFS-backed PVC and writes a message to a file with the current hostname.
 
