@@ -178,38 +178,75 @@ dbschematest=>
 ```
 
 # DynamoDB
-
-This demo will deploy an application which receives post request to  `/item`endpoint and a JSON document with the following payload
+This demo deploys a simple Node.js application that exposes a `POST` endpoint at `/item`. The endpoint accepts a JSON payload with the following structure:
 
 ```json
 {
-    "id": "1", 
-    "data": "my data"
+  "id": "1",
+  "data": "my data"
 }
 ```
 
-The application is deployed in the same namespace as the rest of the demo, and to trigger its deployment, please go to the `node-dynamodbp` foder located at the repository root level and execute the `deploy.sh` script. It may require to grant execution permissions to the script with `chmod +x deploy.sh`. 
+On successful request, the application stores a new item in the `Items` DynamoDB table (in the cluster's AWS region), including:
+- The `id` and `data` fields from the request
+- A `timestamp` field added by the application
 
-At the first attempt, the application won't work as the service account `default` is not able to assume the IAM role to perform a put operation in the Items DynamoDB table. 
+---
+
+## Deployment Instructions
+
+The application is deployed in the same namespace as the rest of the demo. To deploy it:
+
+1. Navigate to the `node-dynamodbp` directory (at the root of the repository).
+2. Run the deployment script:
 
 ```bash
-curl -X POST https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item \
-     -H "Content-Type: application/json" \
-     -d    '{"id": "1", "data": "Wrong Service Account"}'
+chmod +x deploy.sh  # Only if needed
+./deploy.sh
 ```
 
-To fix it, simply, navigate to the `infra` directory and execute the following patch instruction to have a new workload with the correct service account: 
+---
+
+## First Run: Expected Failure
+
+By default, the deployment uses the `default` service account, which lacks permission to access DynamoDB. So, the first request will fail with a credentials error in the pod logs.
+
+Try sending a sample request:
 
 ```bash
+curl -X POST "https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item" \
+     -H "Content-Type: application/json" \
+     -d '{"id": "1", "data": "Wrong Service Account"}'
+```
+
+---
+
+## Fix: Patch the Deployment with the Correct Service Account
+
+To grant proper access, patch the deployment to use the service account configured with IAM permissions for DynamoDB:
+
+```bash
+#Note the -chdir command to retrieve the output from the correct infra directory
+# -- This assumes that you are in the node-dynamodb directory or an equivalent one 
+#    in the path hierarchy. 
 SERVICE_ACCOUNT_NAME=$(terraform -chdir=../infra output -raw demo_service_account)
+
 oc patch deployment rosa-dynamodb-demo \
   -p "{\"spec\": {\"template\": {\"spec\": {\"serviceAccountName\": \"${SERVICE_ACCOUNT_NAME}\"}}}}"
 ```
 
-Now, it will create a item in the table. 
+This service account has IRSA annotations and the correct IAM role to perform `PutItem` operations on the `Items` table.
+
+---
+
+## Second Try: Success 🎉
+
+Now, the same request will successfully write to DynamoDB:
 
 ```bash
-curl -X POST https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item \
+curl -X POST "https://$(oc get route rosa-dynamodb-demo -ojsonpath='{.spec.host}')/item" \
      -H "Content-Type: application/json" \
-     -d    '{"id": "1", "data": "Works!"}'
+     -d '{"id": "1", "data": "Works!"}'
 ```
+
+You should see a response confirming the item was added in the DynamoDB resource page at the menu *Explore Items*.
