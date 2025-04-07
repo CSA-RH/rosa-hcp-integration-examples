@@ -60,7 +60,7 @@ You'll deploy a simple `aws-cli` Pod and use the AWS SDK via CLI to list S3 buck
 The following command deploys a Pod running the official AWS CLI container image. It uses the service account configured with IRSA to assume the IAM role with S3 access:
 
 ```bash
-cat <<EOF | oc create -f -
+cat <<EOF | oc apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -86,6 +86,8 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: BUCKET
+              value: $(terraform output -raw s3_bucket_pictures)
 EOF
 ```
 
@@ -108,6 +110,9 @@ From within the Pod, you can now use the AWS CLI authenticated via IRSA. For exa
 ```bash
 aws s3 ls
 ```
+
+Additionally, the pod has been created with a BUCKET environment variable which points to a randomly created bucket to check permissions and operations. 
+
 
 ✅ If your IAM role is correctly configured, you should see the list of accessible S3 buckets.
 

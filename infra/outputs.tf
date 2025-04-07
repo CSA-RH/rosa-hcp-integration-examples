@@ -93,6 +93,32 @@ output s3_bucket_pictures {
   value = resource.aws_s3_bucket.s3_bucket_pictures.bucket
 }
 
+output "s3_bucket_pictures_policy" {
+  description = "IAM policy allowing access to the specific S3 bucket"
+  value = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${resource.aws_s3_bucket.s3_bucket_pictures.arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = [
+          "s3:ListBucket"
+        ]
+        Resource = resource.aws_s3_bucket.s3_bucket_pictures.arn
+      }
+    ]
+  })
+}
+
+
 output demo_role_arn {
   value = resource.aws_iam_role.demo_role.arn
 }
