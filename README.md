@@ -490,7 +490,7 @@ spec:
       containers:
       - name: busybox
         image: busybox        
-        command: ["/bin/sh", "-c", "echo 'Hello from EFS on ROSA!' > /mnt/efs/efs-demo.txt; sleep 3600"]
+        command: ["/bin/sh", "-c", "echo 'Hello from EFS on ROSA!' >> /mnt/efs/efs-demo.txt; sleep 3600"]
         volumeMounts:
         - name: efs-volume
           mountPath: /mnt/efs
