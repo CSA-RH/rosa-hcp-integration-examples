@@ -432,7 +432,7 @@ parameters:
   fileSystemId: $(terraform output -raw efs_resource_id)
   gidRangeEnd: "2000"
   gidRangeStart: "1000"
-  provisioningMode: efs-sc
+  provisioningMode: efs-ap
 provisioner: efs.csi.aws.com
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
