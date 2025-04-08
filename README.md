@@ -495,7 +495,7 @@ spec:
       containers:
       - name: busybox
         image: busybox        
-        command: ["/bin/sh", "-c", "echo 'Hello from EFS on ROSA!' >> /mnt/efs/efs-demo.txt; sleep 3600"]
+        command: ["/bin/sh", "-c", "cat /etc/hostname >> /mnt/efs/efs-demo.txt; sleep 3600"]
         volumeMounts:
         - name: efs-volume
           mountPath: /mnt/efs
@@ -519,12 +519,12 @@ oc rsh \
   cat /mnt/efs/efs-demo.txt
 ```
 
-✅ Expected output:
+✅ Expected output to be like:
 
 ```
-Hello from EFS on ROSA!
-Hello from EFS on ROSA!
-Hello from EFS on ROSA!
+efs-app-6d764669c4-rspsj
+efs-app-6d764669c4-z8wt6
+efs-app-6d764669c4-8s772
 ```
 
 ---

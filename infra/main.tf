@@ -200,9 +200,9 @@ resource "random_string" "suffix" {
   upper   = false
   special = false
 
-  lifecycle {
+/*  lifecycle {
     prevent_destroy = true
-  }
+  }*/
 }
 
 resource "aws_s3_bucket" "s3_bucket_pictures" {
